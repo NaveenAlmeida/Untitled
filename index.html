@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="theme-color" content="#101827"><title>7Day — Private chat</title>
+<meta name="theme-color" content="#101827"><title>untitled</title>
 <style>
 :root{color-scheme:dark;--bg:#0c111b;--panel:#151e2c;--line:#293548;--muted:#9aa9bd;--green:#287b64;--text:#eef4fb}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px system-ui,-apple-system,Segoe UI,sans-serif}
@@ -21,22 +21,22 @@ button{border:0;border-radius:10px;padding:11px 15px;background:var(--green);col
 </style>
 </head>
 <body><main>
-<header class="brand"><div class="logo">7</div><div><h1>7Day</h1><div class="muted">A little space, just for two.</div></div></header>
+<header class="brand"><div class="logo">7</div><div><h1>Untitled</h1><div class="muted"></div></div></header>
 <section id="setup" class="card">
-<h2 id="setupTitle">Create a private room</h2>
-<p class="muted">Anonymous sign-in. No phone number or email required.</p>
+<h2 id="setupTitle"></h2>
+<p class="muted"></p>
 <label for="nickname">Your nickname</label><input id="nickname" maxlength="24" placeholder="e.g. Blue Whale" autocomplete="nickname">
 <div id="createArea" class="actions"><button id="createBtn">Create room</button></div>
 <div id="joinArea" class="hidden"><p class="muted">You have an invitation link. Choose a nickname to join.</p><button id="joinBtn">Join private room</button></div>
 <div id="setupStatus" class="status" role="status"></div>
 </section>
 <section id="chat" class="hidden">
-<div class="card topline"><div><strong>Private room</strong><div id="roomStatus" class="muted">Connecting…</div></div><button id="copyBtn" class="secondary">Copy invite</button></div>
+<div class="card topline"><div><strong></strong><div id="roomStatus" class="muted">Connecting…</div></div><button id="copyBtn" class="secondary">Copy invite</button></div>
 <div id="messages" class="card" aria-live="polite"></div>
-<div class="card"><div id="compose"><textarea id="message" maxlength="3000" rows="2" placeholder="Write a message…"></textarea><button id="sendBtn">Send</button></div><div class="muted" style="margin-top:9px">Messages expire 7 days after sending. Room expires 7 days after creation.</div></div>
+<div class="card"><div id="compose"><textarea id="message" maxlength="3000" rows="2" placeholder="Write a message…"></textarea><button id="sendBtn">Send</button></div><div class="muted" style="margin-top:9px"></div></div>
 <div class="actions"><button id="leaveBtn" class="secondary">Leave this browser</button></div>
 </section>
-<div class="card notice">Privacy note: Message text is encrypted in your browser before being sent. This is an early-stage app, not an audited secure messenger. Anyone holding the invitation link can attempt to join until the room is full or expires. Avoid sharing highly sensitive information until security testing is complete.</div>
+<div class="card notice"></div>
 <div id="globalStatus" class="status"></div>
 </main>
 <script type="module">
