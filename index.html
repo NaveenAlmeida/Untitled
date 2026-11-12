@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#101827"><title>7Day — Private chat</title>
+<style>
+:root{color-scheme:dark;--bg:#0c111b;--panel:#151e2c;--line:#293548;--muted:#9aa9bd;--green:#287b64;--text:#eef4fb}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px system-ui,-apple-system,Segoe UI,sans-serif}
+main{max-width:720px;margin:32px auto;padding:16px}.brand{display:flex;align-items:center;gap:12px;margin-bottom:22px}.logo{width:44px;height:44px;border-radius:14px;background:var(--green);display:grid;place-items:center;font-size:23px;font-weight:800}.muted{color:var(--muted);font-size:13px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:17px;padding:18px;margin:12px 0}
+h1{font-size:22px;margin:0}h2{font-size:17px;margin:0 0 12px}label{display:block;font-size:13px;margin:12px 0 6px;color:var(--muted)}
+input,textarea{width:100%;border:1px solid var(--line);background:#0e1724;color:var(--text);padding:12px;border-radius:10px;font:inherit;outline:none}
+button{border:0;border-radius:10px;padding:11px 15px;background:var(--green);color:white;font-weight:650;cursor:pointer}button.secondary{background:transparent;border:1px solid var(--line);color:var(--text)}button:disabled{opacity:.5;cursor:not-allowed}
+.actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:12px}.hidden{display:none!important}
+#messages{height:48vh;min-height:260px;overflow:auto;display:flex;flex-direction:column;gap:10px}
+.msg{max-width:85%;padding:11px 13px;border-radius:14px;background:#202d40;overflow-wrap:anywhere}.msg.mine{align-self:flex-end;background:#205e50}.msg .who{font-size:11px;font-weight:700;opacity:.8;margin-bottom:5px}.msg .time{font-size:10px;opacity:.7;text-align:right;margin-top:6px;white-space:pre-wrap}
+#compose{display:flex;gap:8px;align-items:end}#compose textarea{resize:vertical;min-height:48px;max-height:130px}
+.notice{border-left:3px solid #c38b38;padding:10px 12px;background:#241e14;color:#e9d8b6;border-radius:6px;font-size:12px}
+.status{font-size:12px;color:var(--muted);min-height:18px}.topline{display:flex;justify-content:space-between;gap:12px;align-items:center}
+@media(max-width:520px){main{margin:10px auto;padding:12px}.card{padding:14px}#messages{height:55vh}}
+</style>
+</head>
+<body><main>
+<header class="brand"><div class="logo">7</div><div><h1>7Day</h1><div class="muted">A little space, just for two.</div></div></header>
+<section id="setup" class="card">
+<h2 id="setupTitle">Create a private room</h2>
+<p class="muted">Anonymous sign-in. No phone number or email required.</p>
+<label for="nickname">Your nickname</label><input id="nickname" maxlength="24" placeholder="e.g. Blue Whale" autocomplete="nickname">
+<div id="createArea" class="actions"><button id="createBtn">Create room</button></div>
+<div id="joinArea" class="hidden"><p class="muted">You have an invitation link. Choose a nickname to join.</p><button id="joinBtn">Join private room</button></div>
+<div id="setupStatus" class="status" role="status"></div>
+</section>
+<section id="chat" class="hidden">
+<div class="card topline"><div><strong>Private room</strong><div id="roomStatus" class="muted">Connecting…</div></div><button id="copyBtn" class="secondary">Copy invite</button></div>
+<div id="messages" class="card" aria-live="polite"></div>
+<div class="card"><div id="compose"><textarea id="message" maxlength="3000" rows="2" placeholder="Write a message…"></textarea><button id="sendBtn">Send</button></div><div class="muted" style="margin-top:9px">Messages expire 7 days after sending. Room expires 7 days after creation.</div></div>
+<div class="actions"><button id="leaveBtn" class="secondary">Leave this browser</button></div>
+</section>
+<div class="card notice">Privacy note: Message text is encrypted in your browser before being sent. This is an early-stage app, not an audited secure messenger. Anyone holding the invitation link can attempt to join until the room is full or expires. Avoid sharing highly sensitive information until security testing is complete.</div>
+<div id="globalStatus" class="status"></div>
+</main>
+<script type="module">
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+const CONFIG = {
+  SUPABASE_URL: 'https://ictrcpkxxmqatvtphhuo.supabase.co',
+  SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_vJ2ac8ym5rgJXQnuIx9pJw_KwTisAJl'
+};
+const $ = id => document.getElementById(id);
+const setup = $('setup'), chat = $('chat');
+let supabase, currentUser, roomId, roomKey, inviteToken, inviteUrl, channel;
+let nicknames = new Map(), seen = new Set();
+
+function status(message, target='setupStatus'){ $(target).textContent = message; }
+function bytesToB64(bytes){let s='';bytes.forEach(b=>s+=String.fromCharCode(b));return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');}
+function b64ToBytes(s){s=s.replace(/-/g,'+').replace(/_/g,'/');while(s.length%4)s+='=';return Uint8Array.from(atob(s),c=>c.charCodeAt(0));}
+function randomToken(){return bytesToB64(crypto.getRandomValues(new Uint8Array(32)));}
+async function sha256hex(value){const d=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value));return [...new Uint8Array(d)].map(b=>b.toString(16).padStart(2,'0')).join('');}
+async function encryptText(text){
+  const iv=crypto.getRandomValues(new Uint8Array(12));
+  const key=await crypto.subtle.importKey('raw',roomKey,'AES-GCM',false,['encrypt']);
+  const encrypted=await crypto.subtle.encrypt({name:'AES-GCM',iv},key,new TextEncoder().encode(text));
+  return {ciphertext:bytesToB64(new Uint8Array(encrypted)),iv:bytesToB64(iv)};
+}
+async function decryptText(ciphertext,iv){
+  const key=await crypto.subtle.importKey('raw',roomKey,'AES-GCM',false,['decrypt']);
+  const plain=await crypto.subtle.decrypt({name:'AES-GCM',iv:b64ToBytes(iv)},key,b64ToBytes(ciphertext));
+  return new TextDecoder().decode(plain);
+}
+function parseInvite(){
+  const p=new URLSearchParams(location.hash.slice(1));
+  return {token:p.get('invite'),key:p.get('key')};
+}
+function cleanInviteFromAddress(){history.replaceState(null,'',location.pathname+location.search);}
+async function boot(){
+  if(CONFIG.SUPABASE_URL.includes('PASTE_')||CONFIG.SUPABASE_PUBLISHABLE_KEY.includes('PASTE_')){
+    status('First add your Supabase Project URL and Publishable Key in index.html.');return;
+  }
+  supabase=createClient(CONFIG.SUPABASE_URL,CONFIG.SUPABASE_PUBLISHABLE_KEY,{auth:{persistSession:true,autoRefreshToken:true}});
+  const {data,error}=await supabase.auth.signInAnonymously();
+  if(error)throw error;currentUser=data.user;
+  const invite=parseInvite();
+  if(invite.token && invite.key){
+    inviteToken=invite.token;roomKey=b64ToBytes(invite.key);
+    $('setupTitle').textContent='Join your private room';
+    $('createArea').classList.add('hidden');$('joinArea').classList.remove('hidden');
+  } else {
+    $('setupTitle').textContent='Create a private room';
+  }
+}
+async function createRoom(){
+  const nickname=$('nickname').value.trim();if(!nickname)throw new Error('Enter a nickname first.');
+  inviteToken=randomToken();roomKey=crypto.getRandomValues(new Uint8Array(32));
+  const inviteHash=await sha256hex(inviteToken);
+  const {data,error}=await supabase.rpc('create_chat_room',{p_invite_hash:inviteHash,p_nickname:nickname});
+  if(error)throw error;
+  roomId=data;inviteUrl=location.origin+location.pathname+'#invite='+encodeURIComponent(inviteToken)+'&key='+encodeURIComponent(bytesToB64(roomKey));
+  await openChat(nickname);
+}
+async function joinRoom(){
+  const nickname=$('nickname').value.trim();if(!nickname)throw new Error('Enter a nickname first.');
+  const inviteHash=await sha256hex(inviteToken);
+  const {data,error}=await supabase.rpc('join_chat_room',{p_invite_hash:inviteHash,p_nickname:nickname});
+  if(error)throw error;roomId=data;
+  inviteUrl=location.href;
+  await openChat(nickname);cleanInviteFromAddress();
+}
+async function openChat(myNickname){
+  setup.classList.add('hidden');chat.classList.remove('hidden');
+  const {data:members,error:memberError}=await supabase.from('room_members').select('user_id,nickname').eq('room_id',roomId);
+  if(memberError)throw memberError;
+  members.forEach(m=>nicknames.set(m.user_id,m.nickname));
+  $('roomStatus').textContent='Connected as '+myNickname+' · '+members.length+'/2 participants';
+  const {data:rows,error}=await supabase.from('chat_messages').select('id,room_id,sender_id,ciphertext,iv,created_at,expires_at').eq('room_id',roomId).order('created_at');
+  if(error)throw error;
+  for(const row of rows)await showMessage(row);
+  channel=supabase.channel('room-'+roomId).on('postgres_changes',{event:'INSERT',schema:'public',table:'chat_messages',filter:'room_id=eq.'+roomId},async payload=>{await showMessage(payload.new);}).subscribe();
+}
+async function showMessage(row){
+  if(seen.has(row.id)||new Date(row.expires_at)<=new Date())return;seen.add(row.id);
+  let text;
+  try{text=await decryptText(row.ciphertext,row.iv);}catch(e){text='Unable to decrypt this message (wrong invite key or damaged message).';}
+  const div=document.createElement('div');div.className='msg'+(row.sender_id===currentUser.id?' mine':'');
+  const who=document.createElement('div');who.className='who';who.textContent=nicknames.get(row.sender_id)||(row.sender_id===currentUser.id?'You':'Anonymous friend');
+  const body=document.createElement('div');body.textContent=text;
+  const time=document.createElement('div');time.className='time';time.textContent=new Date(row.created_at).toLocaleString();
+  div.append(who,body,time);$('messages').append(div);$('messages').scrollTop=$('messages').scrollHeight;
+}
+async function sendMessage(){
+  const text=$('message').value.trim();if(!text)return;
+  $('sendBtn').disabled=true;
+  try{
+    const encrypted=await encryptText(text);
+    const {error}=await supabase.from('chat_messages').insert({room_id:roomId,sender_id:currentUser.id,ciphertext:encrypted.ciphertext,iv:encrypted.iv});
+    if(error)throw error;$('message').value='';
+  } finally {$('sendBtn').disabled=false;}
+}
+$('createBtn').onclick=async()=>{try{status('Creating room…');await createRoom();}catch(e){status(e.message);}};
+$('joinBtn').onclick=async()=>{try{status('Joining room…');await joinRoom();}catch(e){status(e.message);}};
+$('sendBtn').onclick=async()=>{try{await sendMessage();}catch(e){status(e.message,'globalStatus');}};
+$('message').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();$('sendBtn').click();}});
+$('copyBtn').onclick=async()=>{try{await navigator.clipboard.writeText(inviteUrl);status('Invitation link copied.','globalStatus');}catch(e){status('Copy unavailable. Copy the invitation URL from the browser address bar before joining.','globalStatus');}};
+$('leaveBtn').onclick=async()=>{if(channel)await supabase.removeChannel(channel);location.href=location.pathname;};
+try{await boot();}catch(e){status('Setup error: '+e.message);}
+</script>
+</body></html>
